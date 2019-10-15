@@ -5,6 +5,11 @@ from IPython.core.magic import (Magics, magics_class, line_magic,
 from IPython.core.interactiveshell import InteractiveShell
 
 
+class StopExecution(Exception):
+    def _render_traceback_(self):
+        pass
+
+
 # The class MUST call this class decorator at creation time
 @magics_class
 class DIMagic(Magics):
@@ -43,6 +48,11 @@ class DIMagic(Magics):
     def get_operator_code(self, line):
         inst = DIObjectHolder.getInstance()
         return inst.get_code(line)
+
+    @line_cell_magic
+    def stop_here(self, line, cell):
+        raise StopExecution
+
 
 
 class DIObjectHolder:
