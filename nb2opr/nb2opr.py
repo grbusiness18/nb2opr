@@ -50,7 +50,7 @@ class DIMagic(Magics):
         return inst.get_code(line)
 
     @line_cell_magic
-    def stop_here(self, line, cell):
+    def stop_here(self, line, cell=None):
         raise StopExecution
 
 
