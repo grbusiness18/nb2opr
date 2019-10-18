@@ -15,29 +15,47 @@ class StopExecution(Exception):
 class DIMagic(Magics):
 
     @line_magic
-    def lmagic(self, line):
+    def code_to_operator(self, line):
         "my line magic"
-        print("Full access to the main IPython object:", self.shell)
-        print("Variables in the user namespace:", list(self.shell.user_ns.keys()))
-        return line
+        # print("Full access to the main IPython object:", self.shell)
+        # print("Variables in the user namespace:", list(self.shell.user_ns.keys()))
+        # print(eval(eval('train'), self.shell.user_ns))
+        inst = DIObjectHolder.getInstance()
+
+        if not inst.get_mode():
+            raise Exception('Enable DI mode using: {}'.format('%set_di_mode True'))
+            # find intersection between userdefined variables and operator code
+        if not list(set(self.shell.user_ns.keys()) & set(inst._operator_code.keys())):
+            raise Exception('No uniform operator declarations and injections.')
+
+        for k in inst._operator_code.keys():
+            op = eval(k, self.shell.user_ns)
+            print("Op is", op)
+            op.config.script = inst.get_code(k)
+            self.shell.user_ns[k] = op
+            print(eval(k, self.shell.user_ns))
+        InteractiveShell().push(self.shell.user_ns, True)
+        print("Code-Pushed-to_operator")
 
     @cell_magic
     def add_code_to_operator(self, line, cell):
 
         inst = DIObjectHolder.getInstance()
         if inst.get_mode():
-            inst.set_code(line, cell)
+            inst.set_code(eval(line), cell)
         else:
             InteractiveShell().run_cell(cell)
 
     @line_magic
-    def set_cloud_mode(self, line):
+    def set_di_mode(self, line):
 
         inst = DIObjectHolder.getInstance()
         if eval(line):
             inst.set_on_cloud_mode()
+            print("DI Mode is ON")
         else:
             inst.set_off_cloud_mode()
+            print("DI Mode is OFF")
 
     @line_magic
     def reset_operator_code(self, line):
@@ -52,7 +70,6 @@ class DIMagic(Magics):
     @line_cell_magic
     def stop_here(self, line, cell=None):
         raise StopExecution
-
 
 
 class DIObjectHolder:
@@ -101,6 +118,7 @@ class DIObjectHolder:
 
     def set_off_cloud_mode(self):
         self._cloud_mode = False
+        self._reset_operator()
 
     def set_on_cloud_mode(self):
         self._cloud_mode = True
