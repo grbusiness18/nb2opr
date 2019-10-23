@@ -3,123 +3,62 @@ from IPython.core.magic import (Magics, magics_class, line_magic,
                                 cell_magic, line_cell_magic)
 
 from IPython.core.interactiveshell import InteractiveShell
+from IPython.core.magic_arguments import (argument, magic_arguments,
+    parse_argstring)
 
+from .diobjecthandler import DIObjectHandler
 
 class StopExecution(Exception):
     def _render_traceback_(self):
         pass
 
 
-# The class MUST call this class decorator at creation time
 @magics_class
 class DIMagic(Magics):
 
-    @line_magic
-    def code_to_operator(self, line):
-        "my line magic"
-        # print("Full access to the main IPython object:", self.shell)
-        # print("Variables in the user namespace:", list(self.shell.user_ns.keys()))
-        # print(eval(eval('train'), self.shell.user_ns))
-        inst = DIObjectHolder.getInstance()
-
-        if not inst.get_mode():
-            raise Exception('Enable DI mode using: {}'.format('%set_di_mode True'))
-            # find intersection between userdefined variables and operator code
-        if not list(set(self.shell.user_ns.keys()) & set(inst._operator_code.keys())):
-            raise Exception('No uniform operator declarations and injections.')
-
-        for k in inst._operator_code.keys():
-            op = eval(k, self.shell.user_ns)
-            print("Op is", op)
-            op.config.script = inst.get_code(k)
-            self.shell.user_ns[k] = op
-            print(eval(k, self.shell.user_ns))
-        InteractiveShell().push(self.shell.user_ns, True)
-        print("Code-Pushed-to_operator")
-
     @cell_magic
-    def add_code_to_operator(self, line, cell):
-
-        inst = DIObjectHolder.getInstance()
-        if inst.get_mode():
-            inst.set_code(eval(line), cell)
+    @magic_arguments()
+    @argument('operator_id', type=str, help='Operator ID in DI.')
+    def add_code_to_operator(self, operator_id, cell):
+        """ Add code to DI operator which is defined already in Pipeline."""
+        args = parse_argstring(self.add_code_to_operator, operator_id)
+        print(args.operator_id)
+        print(cell)
+        instance = DIObjectHandler.get_instance()
+        if instance.di_mode:
+            instance.add_code_to_operator(op=eval(operator_id), code=cell)
         else:
             InteractiveShell().run_cell(cell)
 
     @line_magic
-    def set_di_mode(self, line):
+    @magic_arguments()
+    @argument('-p', '--port', type=str, help='An optional argument.')
+    @argument('-v', '--val', type=str, help='An optional argument.')
+    @argument('-t', '--typ', type=str, help='An optional argument.')
+    @argument('-c', '--context', type=str, help='An optional argument.')
+    @argument('operator_id', type=str, help='An integer positional argument.')
+    def add_port_to_code(self, operator_id):
+        """ A really cool magic command."""
+        args = parse_argstring(self.add_port_to_code, operator_id)
 
-        inst = DIObjectHolder.getInstance()
-        if eval(line):
-            inst.set_on_cloud_mode()
-            print("DI Mode is ON")
-        else:
-            inst.set_off_cloud_mode()
-            print("DI Mode is OFF")
+        if args.val is None:
+            raise Exception("Variable is missing")
+
+        if args.port is None:
+            raise Exception("Port is missing")
+
+            # print(self.shell.user_ns)
+
+        if eval(args.val) not in self.shell.user_ns:
+            raise Exception("Variable {} is not declared before".format(eval(args.val)))
+
+        ## check variable declaration in source code of operator
+
+        instance = DIObjectHandler.get_instance()
+        instance.add_out_port_val_to_operator(eval(args.operator_id), eval(args.port), eval(args.val),
+                                              eval(args.typ.upper()), eval(args.context.upper()))
 
     @line_magic
-    def reset_operator_code(self, line):
-        inst = DIObjectHolder.getInstance()
-        inst.reset_code(line)
-
-    @line_magic
-    def get_operator_code(self, line):
-        inst = DIObjectHolder.getInstance()
-        return inst.get_code(line)
-
-    @line_cell_magic
-    def stop_here(self, line, cell=None):
-        raise StopExecution
-
-
-class DIObjectHolder:
-    _instance = None
-
-    @staticmethod
-    def getInstance():
-        if DIObjectHolder._instance is None:
-            DIObjectHolder()
-        return DIObjectHolder._instance
-
-    def __init__(self):
-
-        self._cloud_mode = False
-        self._operator_code = dict()
-        DIObjectHolder._instance = self
-
-    def set_code(self, op, code):
-        if op in self._operator_code:
-            src_code = self._operator_code[op]
-            src_code.append('\n' + code)
-            self._operator_code[op] = src_code
-        else:
-            self._operator_code[op] = [code]
-
-    def get_code(self, op):
-        src_code = None
-        for cd in self._operator_code[op]:
-            if src_code is None:
-                src_code = cd
-            else:
-                src_code = src_code + " " + cd
-        return src_code
-
-    def reset_code(self, op):
-        self._operator_code[op] = []
-
-    def _reset_operator(self):
-        self._operator_code = dict()
-
-    def print_code(self, op):
-        print(self._operator_code[op])
-
-    def get_mode(self):
-        return self._cloud_mode
-
-    def set_off_cloud_mode(self):
-        self._cloud_mode = False
-        self._reset_operator()
-
-    def set_on_cloud_mode(self):
-        self._cloud_mode = True
-        self._reset_operator()
+    def save(self, line):
+        instance = DIObjectHandler.get_instance()
+        instance.save_graph_to_di()

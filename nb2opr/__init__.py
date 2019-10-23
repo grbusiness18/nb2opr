@@ -2,6 +2,7 @@
 __version__ = '0.0.1'
 
 from .nb2opr import DIMagic
+from .nb2opr import DIObjectHolder
 
 try:
     ip = get_ipython()
