@@ -3,6 +3,7 @@ from sapdi.internal.di_client import DIClient
 from dotenv import load_dotenv, find_dotenv
 import os
 from jq import jq
+import functools
 
 
 class DIObjectHandler:
@@ -33,8 +34,9 @@ class DIObjectHandler:
     @pipeline_id.setter
     def pipeline_id(self, value):
         self.__pipeline_id = value
-        self.__set_model_manager()
-        self.__set_graph()
+        if value:
+            self.__set_model_manager()
+            self.__set_graph()
 
     @property
     def graph(self):
@@ -56,9 +58,26 @@ class DIObjectHandler:
     def di_mode(self):
         return self.__di_mode
 
+    @di_mode.setter
+    def di_mode(self, value):
+        self.__di_mode = value
+
     @property
     def model_manager(self):
         return self.__model_manager
+
+    @model_manager.setter
+    def model_manager(self, value):
+        self.__model_manager = value
+
+    def reset_instance_values(self):
+        self.model_manager = None
+        self.graph = None
+        self.pipeline_id = None
+        self.di_mode = False
+        self.graph_connections = []
+        self.__operators_code = dict()
+        self.__operators_port = dict()
 
     @staticmethod
     def di_connect():
@@ -73,8 +92,9 @@ class DIObjectHandler:
 
     def __set_graph(self):
         try:
-            self.__graph = self.model_manager.find_graph("com.sap.dsp." + self.pipeline_id)
-            self.__graph_connections = self.graph.to_json()['connections']
+            print("com.sap.dsp." + self.pipeline_id)
+            self.graph = self.model_manager.find_graph("com.sap.dsp." + self.pipeline_id)
+            self.graph_connections = self.graph.to_json()['connections']
         except:
             self.pipeline_id = None
             raise "Invalid Pipeline ID : {}".format(self.pipeline_id)
@@ -114,8 +134,18 @@ class DIObjectHandler:
 
         return wrapper
 
+    def validate_di_pipeline(f):
+        @functools.wraps(f)
+        def wrapper(self, *args, **kwargs):
+            ret = f(self, *args, **kwargs)
+            self.__check_pipeline()
+            return ret
+
+        return wrapper
+
     ## public
     @validate_di_mode
+    @validate_di_pipeline
     @validate_di_graph
     @validate_di_operators
     def add_code_to_operator(self, op: str, code: str):
@@ -129,10 +159,11 @@ class DIObjectHandler:
         self.__operators_code[op].append(code)
 
     @validate_di_mode
+    @validate_di_pipeline
     @validate_di_graph
     @validate_di_operators
-    def add_out_port_val_to_operator(self, op: str, port: str, val: str, outtype: str = "default",
-                                     port_context: str = "in"):
+    def add_out_port_val_to_operator(self, op: str, port: str, val: str, outtype: str = "DEFAULT",
+                                     port_context: str = "IN"):
         # self.__check_di_mode_is_on()
         # self.__check_operator_exists(op)
         # self.__check_operator_scriptable(op)
@@ -145,38 +176,56 @@ class DIObjectHandler:
 
         self.__operators_port[op][port] = {
             "value": val,
-            "outtype": outtype,
-            "port_context": port_context
+            "outtype": outtype.upper(),
+            "port_context": port_context.upper()
         }
 
-        if not outtype == 'default':
-            self.__operators_port[op][port]['outtype'] = 'message'
+        if not outtype.upper() == 'DEFAULT':
+            self.__operators_port[op][port]['outtype'] = 'MESSAGE'
+        else:
+            self.__operators_port[op][port]['outtype'] = 'DEFAULT'
 
-        if not port_context == 'in':
-            self.__operators_port[op][port]['port_context'] = 'out'
+        if not port_context.upper() == 'IN':
+            self.__operators_port[op][port]['port_context'] = 'OUT'
+        else:
+            self.__operators_port[op][port]['port_context'] = 'IN'
 
         print(self.__operators_port[op])
 
-    @validate_di_graph
     def set_di_mode_on(self):
-        self.__di_mode = True
+        self.di_mode = True
 
-    @validate_di_graph
     def set_di_mode_off(self):
-        self.__di_mode = False
+        self.di_mode = False
 
     @validate_di_mode
+    @validate_di_pipeline
     @validate_di_graph
     def save_graph_to_di(self):
         self.__prepare_save()
+        self.graph.check()
+        self.graph.save()
+        # pipeline = di.create_pipeline("GRPipeline_v5", description="Some Test description")
+        # pipeline.graph = self.graph
+        # version = di.create_version("1.0")
+        # conf = di.scenario.Configuration.create("GR_test", [], pipeline, version)
+        # handle = pipeline.execute(conf).id
 
     @validate_di_mode
+    @validate_di_pipeline
+    @validate_di_graph
     def get_operators(self):
         return self.graph.operators.keys()
 
+    @validate_di_mode
+    @validate_di_pipeline
+    @validate_di_graph
+    def preview(self):
+        self.__prepare_save(preview=True)
+
     ## private methods
 
-    def __prepare_save(self):
+    def __prepare_save(self, preview=False):
         for op in self.__operators_code:
             # replace the ports to ENUM
             inports = self.__get_connections_for_operator(op, 'INPORT')
@@ -198,8 +247,13 @@ class DIObjectHandler:
             if inports:
                 code = self.__prepare_inports_code(op, inports, code)
 
-            print("----- source code ------")
+            # add code to temp
+
+            print("*----- Operator : '{}' - source code -----*".format(op))
             print(code)
+
+            if not preview:
+                self.graph.operators[op].config['script'] = code
 
     def __prepare_code(self, op, make_fn=False):
         src_code = None
@@ -263,11 +317,12 @@ class DIObjectHandler:
             if port in self.__operators_port[op]:
                 # check value in src-code
                 outport_value = self.__operators_port[op][port]['value']
+                self.__check_var_in_src_code(op=op, var=outport_value)
 
-            if self.__operators_port[op][port]['outtype'] == 'message':
+            if self.__operators_port[op][port]['outtype'] == 'MESSAGE':
                 outport_value = outport_message.replace("&outport_value", outport_value)
 
-            if self.__operators_port[op][port]['port_context'] == 'out':
+            if self.__operators_port[op][port]['port_context'] == 'OUT':
                 if src_code_wo_gaps:
                     src_code_wo_gaps = src_code_wo_gaps + '\n' + outport_template.format(port).replace("&outport_value",
                                                                                                        outport_value)
@@ -281,9 +336,27 @@ class DIObjectHandler:
                 else:
                     src_code_with_gaps = '    ' + outport_template.format(port).replace("&outport_value", outport_value)
 
-        # print(src_code_with_gaps, src_code_wo_gaps)
-
         return src_code_with_gaps, src_code_wo_gaps
+
+    def __check_var_in_src_code(self, op: str, var: str):
+        if op not in self.__operators_code:
+            raise Exception("Operator '{}' doesn't have any Source code added.".format(op))
+
+        src_code = self.__operators_code[op]
+        found_var = False
+        for cd in src_code:
+            if var in cd:
+                found_var = True
+                break
+
+        if not found_var:
+            print(self.__operators_code[op])
+            raise Exception("Variable '{}' isn't declared or added to source code".format(var))
+
+    def __check_pipeline(self):
+        if self.pipeline_id is None:
+            print("Please use following command to set pipeline.\n%set_di_pipeline <pipeline-id>")
+            raise Exception("Invalid DI Pipeline.")
 
     def __check_graph(self):
         if not isinstance(self.graph, di.internal.modeler.graph.Graph):
@@ -299,7 +372,7 @@ class DIObjectHandler:
 
     def __check_operator_exists(self, op):
         if op not in self.graph.operators.keys():
-            raise Exception("Invalid Operator {}".format(op))
+            raise Exception("Operator Invalid: Pipeline doesn't have Operator {}".format(op))
 
     def __check_port_exists_for_operator(self, op: str, typ: str, port: str):
         if self.__get_connections_for_operator(op, typ, port):
@@ -324,5 +397,5 @@ class DIObjectHandler:
         try:
             cops = jq(trns).transform(self.graph_connections, multiple_output=True)
             return cops
-        except:
+        except StopIteration:
             return None
