@@ -1,11 +1,4 @@
 """ DI Notebook 2 Operator Helper """
 __version__ = '0.0.1'
 
-from .nb2opr import DIMagic
-from .nb2opr import DIObjectHandler
-
-try:
-    ip = get_ipython()
-    ip.register_magics(DIMagic)
-except:
-    pass
+from .exporters import add_code_to_existing_pipeline_operator, add_connections_to_port, add_port_to_operator, create_operator, create_pipeline

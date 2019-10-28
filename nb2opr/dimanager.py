@@ -79,7 +79,7 @@ class DIManager:
         return di.list_pipeline_templates()
 
     def generate_pipeline_name(self, name: str = None):
-        names = [p.name for p in di.list_pipeline()]
+        names = [p.name for p in di.list_pipelines()]
         if name:
             if name in names:
                 raise Exception("Pipeline Name {} already exists".format(name))
