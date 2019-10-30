@@ -1,6 +1,6 @@
 import unittest
 import os
-from nb2opr.exporters import add_code_to_existing_pipeline_operator
+from nb2opr.exporters import add_code_to_operator
 from nb2opr.exporters import add_connections_to_port, add_port_to_operator, get_pipelines
 from nb2opr.dimanager import DIManager
 import sapdi as di
@@ -21,7 +21,8 @@ class TestProcessor(unittest.TestCase):
         cls.scenario_id = scenario.id
         cls.s1 = {
             'operator_name': 'python3operator1',
-            'invalid_operator': 'python3OPERATO1'
+            'invalid_operator': 'python3OPERATO1',
+            'non_script_operator': 'readfile1'
         }
 
         cls.s2 = {
@@ -52,22 +53,18 @@ class TestProcessor(unittest.TestCase):
         p.delete()
 
     def test_s1_add_code_to_operator_success(self):
-        warnings.simplefilter("ignore", ResourceWarning)
-
-        @add_code_to_existing_pipeline_operator(di_mode=True, pipeline_id=self.pipeline_id,
-                                                operator_name=self.s1['operator_name'])
+        @add_code_to_operator(di_mode=True, pipeline_id=self.pipeline_id, operator_name=self.s1['operator_name'])
         def test_function():
             print("Hello World !!")
 
         code = test_function()
         graph = self.di_manager.get_graph()
+        print(code)
+        print(graph.operators[self.s1['operator_name']].config['script'])
         self.assertEqual(graph.operators[self.s1['operator_name']].config['script'], code)
 
     def test_s1_add_code_to_operator_di_mode_off(self):
-        warnings.simplefilter("ignore", ResourceWarning)
-
-        @add_code_to_existing_pipeline_operator(di_mode=False, pipeline_id=self.pipeline_id,
-                                                operator_name=self.s1['operator_name'])
+        @add_code_to_operator(di_mode=False, pipeline_id=self.pipeline_id, operator_name=self.s1['operator_name'])
         def test_function():
             print("Hello World !!")
 
@@ -75,10 +72,14 @@ class TestProcessor(unittest.TestCase):
         self.assertIsNone(code)
 
     def test_s1_add_code_to_operator_invalid_operator(self):
-        warnings.simplefilter("ignore", ResourceWarning)
+        @add_code_to_operator(di_mode=True, pipeline_id=self.pipeline_id, operator_name=self.s1['invalid_operator'])
+        def test_function():
+            print("Hello World !!")
 
-        @add_code_to_existing_pipeline_operator(di_mode=True, pipeline_id=self.pipeline_id,
-                                                operator_name=self.s1['invalid_operator'])
+        self.assertRaises(Exception, lambda: test_function())
+
+    def test_s1_add_code_to_operator_non_script_operator(self):
+        @add_code_to_operator(di_mode=True, pipeline_id=self.pipeline_id, operator_name=self.s1['non_script_operator'])
         def test_function():
             print("Hello World !!")
 

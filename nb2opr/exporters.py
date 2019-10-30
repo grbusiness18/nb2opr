@@ -10,7 +10,11 @@ log = logging.getLogger('di_logger')
 DIManager.di_connect()
 
 
-def add_code_to_existing_pipeline_operator(di_mode: bool = False, pipeline_id: str = None, operator_name: str = None, ports: dict = {}):
+def set_log_level(level):
+    log.level = level
+
+
+def add_code_to_operator(di_mode: bool = False, pipeline_id: str = None, operator_name: str = None, ports: dict = {}):
     def wrapper(fn):
         def inner_wrapper(*args, **kwargs):
             if di_mode:
@@ -69,19 +73,20 @@ def add_port_to_operator(opr_name: str, porttype: str, portname: str, portkind:s
     port_added = True
     return port_added
 
+
 def create_operator(opr: str, new_pipeline: bool=False, pipeline_id: str=None):
     instance = DIManager.get_instance()
     instance.set_di_mode_on()
     if new_pipeline:
         pipeline = instance.create_pipeline()
-        print("New pipeline {} created.".format(pipeline.name))
+        log.info("New pipeline {} created.".format(pipeline.name))
         instance.set_pipeline(pipeline.id)
     else:
         assert pipeline_id is not None, "Invalid or Empty pipeline-id"
         instance.set_pipeline(pipeline_id)
 
     instance.create_operator()
-    print("Operator '{}' has been created successfully".format(opr))
+    log.info("Operator '{}' has been created successfully".format(opr))
 
 
 def create_pipeline(name:str, desc:str=None, template=None):

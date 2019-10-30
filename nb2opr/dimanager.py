@@ -2,12 +2,17 @@ import sapdi as di
 import logging
 import os
 from sapdi.internal.di_client import DIClient
+from .di_code_generator import DIOperatorCodeGen
 from dotenv import load_dotenv, find_dotenv
 from jq import jq
 
 log = logging.getLogger('di_logger')
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s\\n %(levelname)s %(message)s', datefmt='%H:%M:%S')
-print("Log level {}".format(log.level))
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s\\n %(levelname)s %(message)s', datefmt='%H:%M:%S')
+
+
+def set_log_level(level):
+    log.level = level
+
 
 class DIManager:
     _instance = None
@@ -187,89 +192,9 @@ class DIManager:
         log.debug("Ports {}".format(ports))
 
         src_code = None
-        ## Outport add
-
         outports = self.get_ports_for_operator(op, porttype='OUT')
-        outport_template = 'api.send("{}",&outportval)'
-        outport_message = 'api.Message(&outportval)'
-
-        for p in outports:
-            outport_values = None
-            outport_values = outport_template.format(p['src']['port'])
-            if p['src']['port'] in ports.keys():
-                # when just string is passed.
-                if isinstance(ports[p['src']['port']], str):
-                    outport_values = outport_values.replace("&outportval", ports[p['src']['port']])
-
-                # when a dict is passed.
-                if isinstance(ports[p['src']['port']], dict):
-                    port_dict = ports[p['src']['port']]
-                    if 'message' in port_dict:
-                        if port_dict['message']:
-                            outport_values = outport_values.replace("&outportval", outport_message)
-
-                    if 'value' in port_dict:
-                        if 'is_string' in port_dict:
-                            if port_dict['is_string']:
-                                outport_values = outport_values.replace("&outportval", '"{}"')
-                                outport_values = outport_values.format(port_dict['value'])
-                            else:
-                                outport_values = outport_values.replace("&outportval", port_dict['value'])
-                                # check variable in code
-                        else:
-                            outport_values = outport_values.replace("&outportval", port_dict['value'])
-                            # check variable in code
-                    else:
-                        outport_values = outport_values.replace("&outportval", '""')
-
-            else:
-                outport_values = outport_values.replace("&outportval", '""')
-
-            if src_code:
-                src_code = src_code + '\n    ' + outport_values
-            else:
-                src_code = '\n    ' + outport_values
-                src_code = code + src_code
-
-        log.debug("Output Source Code \n  {}".format(src_code))
-
         inports = self.get_ports_for_operator(op, porttype='IN')
-        inport_template = 'api.set_port_callback(&inport_template, &fn_name)'
-        inport_values = None
-        params = None
-        for p in inports:
-            if params:
-                params = params + ', ' + p['tgt']['port']
-            else:
-                params = p['tgt']['port']
-
-            # print(p['tgt']['port'])
-            if inport_values:
-                inport_values = inport_values + ',' + '"{}"'.format(p['tgt']['port'])
-            else:
-                inport_values = '"{}"'.format(p['tgt']['port'])
-
-        if len(inports) > 1:
-            inport_values = '[ ' + inport_values + ' ]'
-
-        # print("Inport temp", inport_template)
-        # print("Inport values", inport_values)
-        if inport_values is None:
-            inport_values = ""
-
-        inport_template = inport_template.replace("&inport_template", inport_values).replace("&fn_name", fn_name)
-
-        if src_code:
-            src_code = src_code + '\n\n' + inport_template
-        else:
-            src_code = code + '\n\n' + inport_template
-
-        ## inject inports to function params.
-        if params:
-            src_code = 'def ' + fn_name + '(' + params + ', ' + src_code.split('def ' + fn_name + '(', 1)[1]
-
-
-        log.debug("Final Source Code \n  {}".format(src_code))
+        src_code = DIOperatorCodeGen(fn_name=fn_name, code=code, inports=inports, outports=outports, ports=ports).process()
 
         self.get_graph().operators[op].config['script'] = src_code
 
@@ -322,8 +247,8 @@ class DIManager:
         log.debug("Processing Method {}".format("__check_operator_exists"))
         graph = self.get_graph()
         if op not in graph.operators.keys():
-            print("***** ------- available operators ----*****")
-            print(graph.operators.keys())
+            log.info("***** ------- available operators ----*****")
+            log.info(graph.operators.keys())
             raise Exception("Invalid operator: '{}'".format(op))
 
     def __check_operator_scriptable(self, op: str):
