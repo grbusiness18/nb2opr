@@ -1,2 +1,0 @@
-nb2opr
-tests
