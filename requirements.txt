@@ -1,0 +1,5 @@
+sapdi
+prettytable
+jq
+coloredlogs
+python-dotenv
